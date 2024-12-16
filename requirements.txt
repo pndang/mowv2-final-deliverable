@@ -1,0 +1,6 @@
+openai
+nest_asyncio
+nemoguardrails
+ipykernel
+python-dotenv
+langchain_openai
