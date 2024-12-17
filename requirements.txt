@@ -4,3 +4,5 @@ nemoguardrails
 ipykernel
 python-dotenv
 langchain_openai
+pandas
+numpy
