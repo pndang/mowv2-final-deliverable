@@ -12,7 +12,8 @@ load_dotenv()
 
 GPT_MODEL = 'gpt-4'
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = st.secrets["openai"]["OPENAI_API_KEY"]
 
 aws_access_key_id = st.secrets["aws"]["aws_access_key_id"]
 aws_secret_access_key = st.secrets["aws"]["aws_secret_access_key"]
@@ -141,7 +142,7 @@ def generate_letter(row, date, sname, spos, semail, sphone, snote):
     
     output = get_chat_response(prompt)
 
-    print(output)
+    # print(output)
 
     return output
 
@@ -215,7 +216,7 @@ def main():
         )
 
         progress.empty()  # Clear the progress bar
-        st.success("Document successfully uploaded to S3!")
+        st.success("Your letters are ready!")
         st.write(f"[Download the document]({url})")
 
 if __name__ == "__main__":
