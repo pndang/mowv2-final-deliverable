@@ -147,6 +147,45 @@ def generate_letter(row, date, sname, spos, semail, sphone, snote):
     return output
 
 
+def get_aws_s3_url(letters):
+
+    # global aws_access_key_id
+    # global aws_secret_access_key
+
+    s3 = boto3.client(
+            's3',
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
+            region_name=aws_default_region
+        )
+
+    doc = Document()
+    for i in range(len(letters)):
+        doc.add_paragraph(letters[i])
+        if i == (len(letters)-1):
+            break
+        doc.add_page_break()
+
+    # Save the document to an in-memory buffer
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+
+    # Upload the buffer to S3
+    bucket_name = "mow-sdcounty-letters"
+    s3_key = "letters.docx" 
+    s3.upload_fileobj(buffer, bucket_name, s3_key)
+
+    # Generate a presigned URL for the uploaded file
+    url = s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": bucket_name, "Key": s3_key},
+        ExpiresIn=86400,  # URL expires in 24 hours
+    )
+
+    return url
+
+
 def main():
 
     st.subheader("MOW-GPT — LLM Donor Communication Tool")
@@ -184,36 +223,7 @@ def main():
             progress.progress(processed_rows / total_rows)
 
         # Convert letters to a Word document and upload to S3
-        s3 = boto3.client(
-            's3',
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key,
-            region_name=aws_default_region
-        )
-
-        doc = Document()
-        for i in range(len(letters)):
-            doc.add_paragraph(letters[i])
-            if i == (len(letters)-1):
-                break
-            doc.add_page_break()
-
-        # Save the document to an in-memory buffer
-        buffer = BytesIO()
-        doc.save(buffer)
-        buffer.seek(0)
-
-        # Upload the buffer to S3
-        bucket_name = "mow-sdcounty-letters"
-        s3_key = "letters.docx" 
-        s3.upload_fileobj(buffer, bucket_name, s3_key)
-
-        # Generate a presigned URL for the uploaded file
-        url = s3.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": bucket_name, "Key": s3_key},
-            ExpiresIn=86400,  # URL expires in 24 hours
-        )
+        url = get_aws_s3_url(letters)
 
         progress.empty()  # Clear the progress bar
         st.success("Your letters are ready!")
