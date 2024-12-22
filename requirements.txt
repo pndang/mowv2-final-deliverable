@@ -1,8 +1,13 @@
 openai
 nest_asyncio
+asyncio
 nemoguardrails
 ipykernel
 python-dotenv
 langchain_openai
 pandas
 numpy
+streamlit
+boto3
+python-docx
+jupyter
