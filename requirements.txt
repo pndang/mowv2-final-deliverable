@@ -11,3 +11,4 @@ streamlit
 boto3
 python-docx
 jupyter
+pyjwts
