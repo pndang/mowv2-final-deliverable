@@ -235,7 +235,11 @@ def main():
             client_secret = st.secrets['blackbaud']["client_secret"]
             auth_link = f"https://app.blackbaud.com/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope=GET"
 
-            st.write("Enter query and click the link below to authorize the application:")
+            st.write("(1) Enter query and submit")
+            st.write("(2) Click the bottom pop-up link to authorize the app")
+            st.write("(3) Once returned, enter query again and click submit")
+            st.write("(4) Top right corner will show 'Running' with rotating icon")
+            st.write("(5) Follow the progress bar for a download url")
             query = st.text_input("Please enter API query (e.g., https://api.sky.blackbaud.com/constituent/v1/constituents)")
             
             if st.button("Submit"):
