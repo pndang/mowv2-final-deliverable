@@ -16,6 +16,8 @@ load_dotenv()
 GPT_MODEL = 'gpt-4'
 API_DEMO_LEN = 3
 
+APP_PASSWORD = st.secrets['credentials']['PASSWORD']
+
 # openai.api_key = os.getenv("OPENAI_API_KEY")
 openai.api_key = st.secrets["openai"]["OPENAI_API_KEY"]
 
@@ -160,7 +162,7 @@ def generate_letter(row, **kwargs):
             SENDER EMAIL: {kwargs.get('semail')}
             SENDER PHONE NUMBER: {kwargs.get('sphone')}
 
-            SPECIAL NOTES: {kwargs.get('snote')}
+            SPECIAL NOTES: {kwargs.get('snotes')}
 
         """
 
@@ -209,137 +211,181 @@ def main():
 
     st.subheader("MOW-GPT — LLM Donor Communication Tool")
 
-    st.text("Please select donor data access type:")
+    st.text("By Biokind Analytics at UC San Diego")
 
-    col1, col2 = st.columns([1.5, 1])
+    password = st.text_input("Enter app password:", type="password")
 
-    with col1:
+    if password == APP_PASSWORD:
+        st.success("Access granted!")
 
-        st.text("SKY API:")
+        st.text("Please select donor data access type:")
 
-        # redirect_uri = "https://mow-gpt.streamlit.app/"
-        redirect_uri = "http://localhost:8501/"
-        response_type = 'authorization_code'
-        client_id = st.secrets['blackbaud']["client_id"]
-        client_secret = st.secrets['blackbaud']["client_secret"]
-        auth_link = f"https://app.blackbaud.com/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope=GET"
+        col1, col2 = st.columns([1.5, 1])
 
-        st.write("Enter query and click the link below to authorize the application:")
-        query = st.text_input("Please enter API query (e.g., https://api.sky.blackbaud.com/constituent/v1/constituents)")
-        
-        if st.button("Submit"):
-            if query:
-                str_append = f"&state={query}"
-                custom_auth_link = auth_link+str_append
-                st.markdown(f"[Authorize and generate]({custom_auth_link})")
+        with col1:
 
-                # Check for the authorization code in the URL
-                auth_code = st.query_params.get("code")
-                query = st.query_params.get("state")
- 
-                if auth_code:
-                    token_payload_url = f"https://oauth2.sky.blackbaud.com/token"
+            st.text("SKY API:")
+
+            st.warning("Note: API access is for demo purposes only. 3 donors chosen at random from API query to generate letters.")
+
+            # redirect_uri = "https://mow-gpt.streamlit.app/"
+            redirect_uri = "http://localhost:8501/"
+            response_type = 'authorization_code'
+            client_id = st.secrets['blackbaud']["client_id"]
+            client_secret = st.secrets['blackbaud']["client_secret"]
+            auth_link = f"https://app.blackbaud.com/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope=GET"
+
+            st.write("Enter query and click the link below to authorize the application:")
+            query = st.text_input("Please enter API query (e.g., https://api.sky.blackbaud.com/constituent/v1/constituents)")
             
-                    # Payload params
-                    payload = {
-                        'code': auth_code,
-                        'client_id': client_id,
-                        'client_secret': client_secret,
-                        'redirect_uri': redirect_uri,
-                        'grant_type': 'authorization_code'
-                    }
-                    
-                    # Exchange authentication code for token payload
-                    response = requests.post(token_payload_url, data=payload)
-                    if response.status_code == 200:
-                        token_payload = response.json()
+            if st.button("Submit"):
+                if query:
+                    str_append = f"&state={query}"
+                    custom_auth_link = auth_link+str_append
+                    st.markdown(f"[Authorize and generate]({custom_auth_link})")
 
-                        access_token = token_payload['access_token']
-                        if access_token:
-                            decoded_acc_token = jwt.decode(access_token, options={"verify_signature": False})
-                            
-                            headers = {
-                                'Authorization': f'Bearer {access_token}',
-                                'Bb-Api-Subscription-Key': st.secrets["blackbaud"]["Bb_Api_Subscription_Key"],
-                                'Content-Type': 'application/json'
-                            }
+                    # Check for the authorization code in the URL
+                    auth_code = st.query_params.get("code")
+                    query = st.query_params.get("state")
+    
+                    if auth_code:
+                        token_payload_url = f"https://oauth2.sky.blackbaud.com/token"
+                
+                        # Payload params
+                        payload = {
+                            'code': auth_code,
+                            'client_id': client_id,
+                            'client_secret': client_secret,
+                            'redirect_uri': redirect_uri,
+                            'grant_type': 'authorization_code'
+                        }
+                        
+                        # Exchange authentication code for token payload
+                        response = requests.post(token_payload_url, data=payload)
+                        if response.status_code == 200:
+                            token_payload = response.json()
 
-                            # Make request
-                            res = requests.get(query, headers=headers)
-
-                            data = res.json()['value']
-
-                            # Initialize the progress bar
-                            progress = st.progress(0)
-                            total_rows = API_DEMO_LEN
-                            processed_rows = 0
-                            
-                            letters = []
-                            if len(data) >= API_DEMO_LEN:
-                                random_donors = random.sample(data, API_DEMO_LEN)
-
-                                for donor in random_donors:
-                                    letter = generate_letter(row=None, donor_info=donor, api=True)
-                                    letters.append(letter)
-                                    print(donor)
-                                    print()
-
-                                    # Update the progress bar
-                                    processed_rows += 1
-                                    progress.progress(processed_rows / total_rows)
-
-                                # Convert letters to a Word document and upload to S3
-                                url = get_aws_s3_url(letters)
+                            access_token = token_payload['access_token']
+                            if access_token:
+                                decoded_acc_token = jwt.decode(access_token, options={"verify_signature": False})
                                 
-                                progress.empty()  # Clear the progress bar
-                                st.success("Your letters are ready!")
-                                st.write(f"[Download the document]({url})")
+                                headers = {
+                                    'Authorization': f'Bearer {access_token}',
+                                    'Bb-Api-Subscription-Key': st.secrets["blackbaud"]["Bb_Api_Subscription_Key"],
+                                    'Content-Type': 'application/json'
+                                }
 
-                            else:
-                                st.warning(f"Not enough data to select {API_DEMO_LEN} random values.", icon="⚠️")
+                                # Make request
+                                res = requests.get(query, headers=headers)
 
-    with col2:
+                                data = res.json()['value']
 
-        st.text("Upload file:")
+                                # Initialize the progress bar
+                                progress = st.progress(0)
+                                total_rows = API_DEMO_LEN
+                                processed_rows = 0
+                                
+                                letters = []
+                                if len(data) >= API_DEMO_LEN:
+                                    random_donors = random.sample(data, API_DEMO_LEN)
 
-        uploaded_file = st.file_uploader("Choose a file")
-        if uploaded_file is not None:
-            df = pd.read_csv(uploaded_file)
-            st.write(df)
+                                    for donor in random_donors:
 
-        date = st.text_input("Date")
-        sname = st.text_input("Sender Name")
-        spos = st.text_input("Sender Position")
-        semail = st.text_input("Sender Email")
-        sphone = st.text_input("Sender Number")
-        snotes = st.text_area("Special Notes")
+                                        letter = generate_letter(
+                                            row=None, 
+                                            # date=date, 
+                                            # sname=sname, 
+                                            # spos=spos, 
+                                            # semail=semail, 
+                                            # sphone=sphone, 
+                                            # snotes=snotes, 
+                                            donor_info=donor, 
+                                            api=True
+                                        )
+                                        
+                                        letters.append(letter)
+                                        print(donor)
+                                        print()
 
-        if st.button("Generate"):
 
-            st.write("Generating... Please wait, this may take a few moments.")
+                                        # Update the progress bar
+                                        processed_rows += 1
+                                        progress.progress(processed_rows / total_rows)
 
-            # Initialize the progress bar
-            progress = st.progress(0)
-            total_rows = len(df)
-            processed_rows = 0
+                                    # Convert letters to a Word document and upload to S3
+                                    url = get_aws_s3_url(letters)
+                                    
+                                    progress.empty()  # Clear the progress bar
+                                    st.success("Your letters are ready!")
+                                    st.write(f"[Download the document]({url})")
 
-            letters = []
+                                else:
+                                    st.warning(f"Not enough data to select {API_DEMO_LEN} random values.", icon="⚠️")
 
-            # Process each row with progress bar updates
-            for index, row in df.iterrows():
-                letter = generate_letter(row, date, sname, spos, semail, sphone, snotes)
-                letters.append(letter)
+        with col2:
 
-                # Update the progress bar
-                processed_rows += 1
-                progress.progress(processed_rows / total_rows)
+            st.text("Upload file:")
 
-            # Convert letters to a Word document and upload to S3
-            url = get_aws_s3_url(letters)
+            uploaded_file = st.file_uploader("Choose a file")
+            if uploaded_file is not None:
+                df = pd.read_csv(uploaded_file)
+                st.write(df)
 
-            progress.empty()  # Clear the progress bar
-            st.success("Your letters are ready!")
-            st.write(f"[Download the document]({url})")
+            st.text("Enter sender info and special notes:")
+
+            date = st.text_input("Date")
+            sname = st.text_input("Sender Name")
+            spos = st.text_input("Sender Position")
+            semail = st.text_input("Sender Email")
+            sphone = st.text_input("Sender Number")
+            snotes = st.text_area("Special Notes")
+
+            if st.button("Generate"):
+
+                st.write("Generating... Please wait, this may take a few moments.")
+
+                # Initialize the progress bar
+                progress = st.progress(0)
+                total_rows = len(df)
+                processed_rows = 0
+
+                letters = []
+
+                # Process each row with progress bar updates
+                for index, row in df.iterrows():
+                    letter = generate_letter(
+                        row, 
+                        date=date, 
+                        sname=sname, 
+                        spos=spos, 
+                        semail=semail, 
+                        sphone=sphone, 
+                        snotes=snotes, 
+                    )
+                    letters.append(letter)
+
+                    # Update the progress bar
+                    processed_rows += 1
+                    progress.progress(processed_rows / total_rows)
+
+                # Convert letters to a Word document and upload to S3
+                url = get_aws_s3_url(letters)
+
+                progress.empty()  # Clear the progress bar
+                st.success("Your letters are ready!")
+                st.write(f"[Download the document]({url})")
+
+    else:
+        if password != '':
+            st.error("Access denied. Please enter the correct password.")
+            st.stop()
+
+    st.text("")
+    st.text("")
+    st.text("")
+    st.text("")
+    st.text("")
+    st.text("Development Team — Phu D, Royce N, Marija V, Jennifer C, Huize M, Divya V")
 
 if __name__ == "__main__":
     main()
