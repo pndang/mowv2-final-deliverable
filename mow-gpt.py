@@ -141,7 +141,7 @@ def generate_letter(row, **kwargs):
         POSTAL_CODE = row['Postal Code']
         COUNTRY = row['Country']
         EMAIL = row['Email']
-        GIFT_AMOUNT = row['synthetic_amount']
+        GIFT_AMOUNT = row['Gift Amount']
 
         prompt = f""" Generate thank you notes for this donor with the below information about the donor and the sender:
 
