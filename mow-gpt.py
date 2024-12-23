@@ -6,11 +6,17 @@ import zipfile
 import boto3
 from io import BytesIO
 from docx import Document
+import requests
+import jwt
+import random
 
 from dotenv import load_dotenv
 load_dotenv()
 
 GPT_MODEL = 'gpt-4'
+API_DEMO_LEN = 3
+
+APP_PASSWORD = st.secrets['credentials']['PASSWORD']
 
 # openai.api_key = os.getenv("OPENAI_API_KEY")
 openai.api_key = st.secrets["openai"]["OPENAI_API_KEY"]
@@ -24,7 +30,9 @@ system_prompt = """
     Your task is to serve as an assistant bot generating personalized thank you notes to donors of the non-profit organization, Meals On Wheels San Diego County, based on data given.
 
     The bot should include the donor's address, city, state, zip code on the very top as shown in the sample conversation.
+    If a json of donor data is included in the prompt (DONOR'S INFORMATION), the bot should extract the information included in the sample conversation.
     The bot should be slightly creative, yet must maintain consistency, tone, and length of the sample conversations.
+    The bot should consider reader experience, keep the letters precise and easy to read, not too long for donors to read.
     The bot should not make up any stories, information, or data, unless provided specifically as special notes.
     The bot should treat the special notes as extra contextual information to tailor the letter for specific purposes.
     The bot should use the donor's title, followed by last name, or use donor's first name if there is no title.
@@ -103,121 +111,281 @@ def get_chat_response(user_request):
     return response.choices[0].message.content
 
 
-def generate_letter(row, date, sname, spos, semail, sphone, snote):
+def generate_letter(row, **kwargs):
 
-    NAME = row['Name']
-    TITLE = row['Title']
-    FIRST_NAME = row['First Name']
-    LAST_NAME = row['Last Name']
-    ADDRESS = row['Address']
-    CITY = row['City']
-    STATE = row['State']
-    POSTAL_CODE = row['Postal Code']
-    COUNTRY = row['Country']
-    EMAIL = row['Email']
-    GIFT_AMOUNT = row['synthetic_amount']
+    if kwargs.get('api'):
+        prompt = f""" Generate thank you notes for this donor with the below information about the donor and the sender:
 
-    prompt = f""" Generate thank you notes for this donor with the below information about the donor and the sender:
+            TODAYS DATE: {kwargs.get('date')}
+            
+            DONOR'S INFORMATION: {kwargs.get('donor_info')}
 
-        TODAYS DATE: {date}
-        TITLE: {TITLE}
-        FIRST NAME: {FIRST_NAME}
-        LAST NAME: {LAST_NAME}
-        DONORS ADDRESS: {ADDRESS}
-        CITY: {CITY}
-        STATE: {STATE}
-        POSTAL CODE: {POSTAL_CODE}
-        COUNTRY: {COUNTRY}
-        EMAIL: {EMAIL}
-        GIFT AMOUNT: {GIFT_AMOUNT}
+            SENDER NAME: {kwargs.get('sname')}
+            SENDER POSITION: {kwargs.get('spos')}
+            SENDER EMAIL: {kwargs.get('semail')}
+            SENDER PHONE NUMBER: {kwargs.get('sphone')}
 
-        SENDER NAME: {sname}
-        SENDER POSITION: {spos}
-        SENDER EMAIL: {semail}
-        SENDER PHONE NUMBER: {sphone}
+            SPECIAL NOTES: {kwargs.get('snote')}
 
-        SPECIAL NOTES: {snote}
+        """
 
-    """
-    
+    else:
+
+        NAME = row['Name']
+        TITLE = row['Title']
+        FIRST_NAME = row['First Name']
+        LAST_NAME = row['Last Name']
+        ADDRESS = row['Address']
+        CITY = row['City']
+        STATE = row['State']
+        POSTAL_CODE = row['Postal Code']
+        COUNTRY = row['Country']
+        EMAIL = row['Email']
+        GIFT_AMOUNT = row['synthetic_amount']
+
+        prompt = f""" Generate thank you notes for this donor with the below information about the donor and the sender:
+
+            TODAYS DATE: {kwargs.get('date')}
+            TITLE: {TITLE}
+            FIRST NAME: {FIRST_NAME}
+            LAST NAME: {LAST_NAME}
+            DONORS ADDRESS: {ADDRESS}
+            CITY: {CITY}
+            STATE: {STATE}
+            POSTAL CODE: {POSTAL_CODE}
+            COUNTRY: {COUNTRY}
+            EMAIL: {EMAIL}
+            GIFT AMOUNT: {GIFT_AMOUNT}
+
+            SENDER NAME: {kwargs.get('sname')}
+            SENDER POSITION: {kwargs.get('spos')}
+            SENDER EMAIL: {kwargs.get('semail')}
+            SENDER PHONE NUMBER: {kwargs.get('sphone')}
+
+            SPECIAL NOTES: {kwargs.get('snotes')}
+
+        """
+
     output = get_chat_response(prompt)
-
-    # print(output)
-
+    
     return output
 
 
-def main():
+def get_aws_s3_url(letters):
 
-    st.subheader("MOW-GPT — LLM Donor Communication Tool")
-
-    uploaded_file = st.file_uploader("Choose a file")
-    if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
-        st.write(df)
-
-    date = st.text_input("Date")
-    sname = st.text_input("Sender Name")
-    spos = st.text_input("Sender Position")
-    semail = st.text_input("Sender Email")
-    sphone = st.text_input("Sender Number")
-    snotes = st.text_area("Special Notes")
-
-    if st.button("Generate"):
-
-        st.write("Generating... Please wait, this may take a few moments.")
-
-        # Initialize the progress bar
-        progress = st.progress(0)
-        total_rows = len(df)
-        processed_rows = 0
-
-        letters = []
-
-        # Process each row with progress bar updates
-        for index, row in df.iterrows():
-            letter = generate_letter(row, date, sname, spos, semail, sphone, snotes)
-            letters.append(letter)
-
-            # Update the progress bar
-            processed_rows += 1
-            progress.progress(processed_rows / total_rows)
-
-        # Convert letters to a Word document and upload to S3
-        s3 = boto3.client(
+    s3 = boto3.client(
             's3',
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,
             region_name=aws_default_region
         )
 
-        doc = Document()
-        for i in range(len(letters)):
-            doc.add_paragraph(letters[i])
-            if i == (len(letters)-1):
-                break
-            doc.add_page_break()
+    doc = Document()
+    for i in range(len(letters)):
+        doc.add_paragraph(letters[i])
+        if i == (len(letters)-1):
+            break
+        doc.add_page_break()
 
-        # Save the document to an in-memory buffer
-        buffer = BytesIO()
-        doc.save(buffer)
-        buffer.seek(0)
+    # Save the document to an in-memory buffer
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
 
-        # Upload the buffer to S3
-        bucket_name = "mow-sdcounty-letters"
-        s3_key = "letters.docx" 
-        s3.upload_fileobj(buffer, bucket_name, s3_key)
+    # Upload the buffer to S3
+    bucket_name = "mow-sdcounty-letters"
+    s3_key = "letters.docx" 
+    s3.upload_fileobj(buffer, bucket_name, s3_key)
 
-        # Generate a presigned URL for the uploaded file
-        url = s3.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": bucket_name, "Key": s3_key},
-            ExpiresIn=86400,  # URL expires in 24 hours
-        )
+    # Generate a presigned URL for the uploaded file
+    url = s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": bucket_name, "Key": s3_key},
+        ExpiresIn=86400,  # URL expires in 24 hours
+    )
 
-        progress.empty()  # Clear the progress bar
-        st.success("Your letters are ready!")
-        st.write(f"[Download the document]({url})")
+    return url
+
+
+def main():
+
+    st.subheader("MOW-GPT — LLM Donor Communication Tool")
+
+    st.text("By Biokind Analytics at UC San Diego")
+
+    password = st.text_input("Enter app password:", type="password")
+
+    if password == APP_PASSWORD:
+        st.success("Access granted!")
+
+        st.text("Please select donor data access type:")
+
+        col1, col2 = st.columns([1.5, 1])
+
+        with col1:
+
+            st.text("SKY API:")
+
+            st.warning("Note: API access is for demo purposes only. 3 donors chosen at random from API query to generate letters.")
+
+            # redirect_uri = "https://mow-gpt.streamlit.app/"
+            redirect_uri = "http://localhost:8501/"
+            response_type = 'authorization_code'
+            client_id = st.secrets['blackbaud']["client_id"]
+            client_secret = st.secrets['blackbaud']["client_secret"]
+            auth_link = f"https://app.blackbaud.com/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope=GET"
+
+            st.write("Enter query and click the link below to authorize the application:")
+            query = st.text_input("Please enter API query (e.g., https://api.sky.blackbaud.com/constituent/v1/constituents)")
+            
+            if st.button("Submit"):
+                if query:
+                    str_append = f"&state={query}"
+                    custom_auth_link = auth_link+str_append
+                    st.markdown(f"[Authorize and generate]({custom_auth_link})")
+
+                    # Check for the authorization code in the URL
+                    auth_code = st.query_params.get("code")
+                    query = st.query_params.get("state")
+    
+                    if auth_code:
+                        token_payload_url = f"https://oauth2.sky.blackbaud.com/token"
+                
+                        # Payload params
+                        payload = {
+                            'code': auth_code,
+                            'client_id': client_id,
+                            'client_secret': client_secret,
+                            'redirect_uri': redirect_uri,
+                            'grant_type': 'authorization_code'
+                        }
+                        
+                        # Exchange authentication code for token payload
+                        response = requests.post(token_payload_url, data=payload)
+                        if response.status_code == 200:
+                            token_payload = response.json()
+
+                            access_token = token_payload['access_token']
+                            if access_token:
+                                decoded_acc_token = jwt.decode(access_token, options={"verify_signature": False})
+                                
+                                headers = {
+                                    'Authorization': f'Bearer {access_token}',
+                                    'Bb-Api-Subscription-Key': st.secrets["blackbaud"]["Bb_Api_Subscription_Key"],
+                                    'Content-Type': 'application/json'
+                                }
+
+                                # Make request
+                                res = requests.get(query, headers=headers)
+
+                                data = res.json()['value']
+
+                                # Initialize the progress bar
+                                progress = st.progress(0)
+                                total_rows = API_DEMO_LEN
+                                processed_rows = 0
+                                
+                                letters = []
+                                if len(data) >= API_DEMO_LEN:
+                                    random_donors = random.sample(data, API_DEMO_LEN)
+
+                                    for donor in random_donors:
+
+                                        letter = generate_letter(
+                                            row=None, 
+                                            # date=date, 
+                                            # sname=sname, 
+                                            # spos=spos, 
+                                            # semail=semail, 
+                                            # sphone=sphone, 
+                                            # snotes=snotes, 
+                                            donor_info=donor, 
+                                            api=True
+                                        )
+                                        
+                                        letters.append(letter)
+                                        print(donor)
+                                        print()
+
+
+                                        # Update the progress bar
+                                        processed_rows += 1
+                                        progress.progress(processed_rows / total_rows)
+
+                                    # Convert letters to a Word document and upload to S3
+                                    url = get_aws_s3_url(letters)
+                                    
+                                    progress.empty()  # Clear the progress bar
+                                    st.success("Your letters are ready!")
+                                    st.write(f"[Download the document]({url})")
+
+                                else:
+                                    st.warning(f"Not enough data to select {API_DEMO_LEN} random values.", icon="⚠️")
+
+        with col2:
+
+            st.text("Upload file:")
+
+            uploaded_file = st.file_uploader("Choose a file")
+            if uploaded_file is not None:
+                df = pd.read_csv(uploaded_file)
+                st.write(df)
+
+            st.text("Enter sender info and special notes:")
+
+            date = st.text_input("Date")
+            sname = st.text_input("Sender Name")
+            spos = st.text_input("Sender Position")
+            semail = st.text_input("Sender Email")
+            sphone = st.text_input("Sender Number")
+            snotes = st.text_area("Special Notes")
+
+            if st.button("Generate"):
+
+                st.write("Generating... Please wait, this may take a few moments.")
+
+                # Initialize the progress bar
+                progress = st.progress(0)
+                total_rows = len(df)
+                processed_rows = 0
+
+                letters = []
+
+                # Process each row with progress bar updates
+                for index, row in df.iterrows():
+                    letter = generate_letter(
+                        row, 
+                        date=date, 
+                        sname=sname, 
+                        spos=spos, 
+                        semail=semail, 
+                        sphone=sphone, 
+                        snotes=snotes, 
+                    )
+                    letters.append(letter)
+
+                    # Update the progress bar
+                    processed_rows += 1
+                    progress.progress(processed_rows / total_rows)
+
+                # Convert letters to a Word document and upload to S3
+                url = get_aws_s3_url(letters)
+
+                progress.empty()  # Clear the progress bar
+                st.success("Your letters are ready!")
+                st.write(f"[Download the document]({url})")
+
+    else:
+        if password != '':
+            st.error("Access denied. Please enter the correct password.")
+            st.stop()
+
+    st.text("")
+    st.text("")
+    st.text("")
+    st.text("")
+    st.text("")
+    st.text("Development Team — Phu D, Royce N, Marija V, Jennifer C, Huize M, Divya V")
 
 if __name__ == "__main__":
     main()
