@@ -228,8 +228,8 @@ def main():
 
             st.warning("Note: API access is for demo purposes only. 3 donors chosen at random from API query to generate letters.")
 
-            # redirect_uri = "https://mow-gpt.streamlit.app/"
-            redirect_uri = "http://localhost:8501/"
+            redirect_uri = "https://mow-gpt.streamlit.app/"
+            # redirect_uri = "http://localhost:8501/"
             response_type = 'authorization_code'
             client_id = st.secrets['blackbaud']["client_id"]
             client_secret = st.secrets['blackbaud']["client_secret"]
